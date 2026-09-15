@@ -74,11 +74,58 @@ def test_compile_error_and_stop_infinite_loop(app):
         window.start()
         wait_for(lambda: window.state in ('paused', 'error'))
         assert window.state == 'paused', window.diagnostics.toPlainText()
+        process = window.worker.engine.mi.process
         window.debug('continue')
         QTest.qWait(100)
         assert window.state == 'running'
         window.stop()
         wait_for(lambda: window.worker is None, 10)
         assert window.state == 'stopped'
+        assert process.poll() is not None
+    finally:
+        dispose(window)
+
+
+def test_auto_play_breakpoint_restart_and_paging(app):
+    window = MainWindow()
+    try:
+        window.editor.setPlainText('''#include <iostream>
+int total = 42;
+int main() {
+    int a[205] = {};
+    int i = 0;
+    for (i=0; i<2; ++i) {
+        a[i] = i + 1;
+    }
+    std::cout << a[1] << std::endl;
+    return 0;
+}
+''')
+        window.editor.breakpoints = {9}
+        window.speed.setValue(100)
+        window.start()
+        wait_for(lambda: window.state in ('paused', 'error'))
+        assert window.state == 'paused'
+        window.toggle_play()
+        wait_for(lambda: (not window.playing and window.state == 'paused') or window.state == 'error', 45)
+        assert window.state == 'paused', window.diagnostics.toPlainText()
+        assert window.history.items[-1].line == 9
+        window.container.setCurrentText('a')
+        assert window.next_page.isEnabled()
+        count = len(window.history.items)
+        window.page(1)
+        wait_for(lambda: window.state in ('paused', 'error'))
+        assert window.selected_container().offset == 200
+        assert len(window.selected_container().cells) == 5
+        assert len(window.history.items) == count
+        window.watch.setText('::total')
+        window.add_watch()
+        wait_for(lambda: window.state in ('paused', 'error'))
+        assert any(v.name == '::total' and v.value == 42 for v in window.history.items[-1].variables)
+        window.restart()
+        wait_for(lambda: window.state in ('paused', 'error'))
+        assert window.state == 'paused'
+        assert len(window.history.items) == 1
+        assert window.history.items[-1].sequence == 1
     finally:
         dispose(window)

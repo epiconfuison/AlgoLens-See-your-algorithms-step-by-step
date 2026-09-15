@@ -46,6 +46,7 @@ class Engine:
     def initialize(self, breakpoints=()):
         self.mi.command('-gdb-set pagination off')
         self.mi.command('-gdb-set confirm off')
+        self.mi.command('-gdb-set charset UTF-8')
         self.mi.command('-gdb-set print elements 200')
         self.mi.command('-gdb-set print repeats 0')
         self.mi.command('-environment-cd ' + quote(self.build.directory.as_posix()))
@@ -106,6 +107,11 @@ class Engine:
         if re.search(r'\[\d+\]', type_name):
             return self._integer('sizeof(' + expression + ')/sizeof((' + expression + ')[0])')
         if re.search(r'(?:std::)?vector\s*<', type_name):
+            if re.search(r'vector\s*<\s*bool\b', type_name):
+                prefix = '(' + expression + ')._M_impl.'
+                return self._integer('(' + prefix + '_M_finish._M_p - ' + prefix +
+                                     '_M_start._M_p) * sizeof(unsigned long) * 8 + ' +
+                                     prefix + '_M_finish._M_offset - ' + prefix + '_M_start._M_offset')
             return self._integer('(' + expression + ')._M_impl._M_finish - (' + expression + ')._M_impl._M_start')
         if re.search(r'(?:std::)?array\s*<', type_name):
             # Empty std::array has no _M_elems array.
@@ -116,11 +122,44 @@ class Engine:
         return None
 
     def _element_expression(self, expression, type_name, index):
+        if re.search(r'\[\d+\]', type_name):
+            return '(' + expression + ')[' + str(index) + ']'
         if re.search(r'(?:std::)?vector\s*<', type_name):
             return '*((' + expression + ')._M_impl._M_start + ' + str(index) + ')'
         if re.search(r'(?:std::)?array\s*<', type_name):
             return '(' + expression + ')._M_elems[' + str(index) + ']'
         return '(' + expression + ')[' + str(index) + ']'
+
+    def _children(self, obj, start, end):
+        data = self.mi.command('-var-list-children --all-values ' + quote(obj) + f' {start} {end}')
+        children = [item['child'] for item in data.get('children', [])]
+        if len(children) != end - start:
+            raise DebugError('容器 pretty-printer 未提供完整页面')
+        return children
+
+    def _read_page(self, var, root, cols, first_type):
+        end = min(var.total, var.offset + PAGE_SIZE)
+        if end <= var.offset:
+            return []
+        if cols is None:
+            children = self._children(root['name'], var.offset, end)
+            return [Cell((var.offset + i,), scalar(child.get('value', '<unavailable>')))
+                    for i, child in enumerate(children)]
+        first_row, last_row = var.offset // cols, (end - 1) // cols
+        rows = self._children(root['name'], first_row, last_row + 1)
+        cells = []
+        for i, row_object in enumerate(rows):
+            row = first_row + i
+            start_col, end_col = max(0, var.offset - row * cols), min(cols, end - row * cols)
+            row_expr = self._element_expression(var.name, var.type, row)
+            if 'vector' in first_type and self._length(row_expr, first_type) != cols:
+                var.status = '非矩形二维容器：不展示不等长行，请使用矩形矩阵'
+                cells.extend(Cell((row, col), '不等长行') for col in range(start_col, end_col))
+                continue
+            children = self._children(row_object['name'], start_col, end_col)
+            cells.extend(Cell((row, start_col + j), scalar(child.get('value', '<unavailable>')))
+                         for j, child in enumerate(children))
+        return cells
 
     def read_variable(self, name, identity, offset=0):
         var = Variable(identity, name)
@@ -144,13 +183,26 @@ class Engine:
             cols = None
             if length:
                 first_expr = self._element_expression(name, var.type, 0)
-                first = self._new_object(first_expr)
+                try:
+                    first = self._children(root['name'], 0, 1)[0]
+                except DebugError:
+                    first = self._new_object(first_expr)
                 first_type = first.get('type', '')
                 cols = self._length(first_expr, first_type)
                 if cols is not None:
                     var.kind, var.shape, var.total = 'matrix', (length, cols), length * cols
             var.offset = min(max(0, offset // PAGE_SIZE * PAGE_SIZE),
                              max(0, (var.total - 1) // PAGE_SIZE * PAGE_SIZE))
+            try:
+                var.cells = self._read_page(var, root, cols, first_type)
+                if var.total > PAGE_SIZE and var.status == 'ok':
+                    var.status = '分页显示'
+                return var
+            except DebugError:
+                # Toolchains without a compatible STL printer still support the
+                # fixed GCC layout adapter below, with the same 200-element bound.
+                pass
+            row_lengths = {}
             for flat in range(var.offset, min(var.total, var.offset + PAGE_SIZE)):
                 if cols is None:
                     expr = self._element_expression(name, var.type, flat)
@@ -159,10 +211,12 @@ class Engine:
                     row, col = divmod(flat, cols)
                     row_expr = self._element_expression(name, var.type, row)
                     # Ragged vectors: validate the current row before any element access.
-                    row_length = self._length(row_expr, first_type)
+                    if row not in row_lengths:
+                        row_lengths[row] = self._length(row_expr, first_type)
+                    row_length = row_lengths[row]
                     index = (row, col)
                     if row_length != cols:
-                        var.status = '非矩形二维容器：不展示不等长行；请单独观察该行'
+                        var.status = '非矩形二维容器：不展示不等长行，请使用矩形矩阵'
                         var.cells.append(Cell(index, '不等长行'))
                         continue
                     expr = self._element_expression(row_expr, first_type, col)
@@ -179,9 +233,9 @@ class Engine:
         return var
 
     def _symbols(self):
-        before = len(self.mi.logs)
         self.console('algoviz-symbols')
-        for text in self.mi.logs[before:]:
+        # The log is bounded; its length may shrink when the reader trims it.
+        for text in reversed(self.mi.logs):
             if text.startswith('ALGOVIZ_SYMBOLS='):
                 return json.loads(text.split('=', 1)[1])
         data = self.mi.command('-stack-list-variables --no-values')
@@ -222,7 +276,8 @@ class Engine:
             self.sequence += 1
         return Snapshot(self.sequence, int(frame.get('line', 0)), frame.get('fullname', ''),
                         frame.get('func', ''), stack, variables,
-                        self.last_stop.get('reason', 'paused'))
+                        self.last_stop.get('reason', 'paused'),
+                        ' '.join(self.last_stop.get(k, '') for k in ('signal-name', 'signal-meaning')).strip())
 
     def output(self):
         result = []

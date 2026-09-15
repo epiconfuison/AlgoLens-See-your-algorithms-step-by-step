@@ -32,6 +32,7 @@ class Snapshot:
     stack: list
     variables: List[Variable]
     reason: str = 'end-stepping-range'
+    detail: str = ''
 
 
 class History:

@@ -96,5 +96,6 @@ def parse_record(line):
 
 
 def quote(text):
-    return json.dumps(str(text), ensure_ascii=True)
+    # MI uses C strings, not JSON's Unicode escape syntax. The transport is UTF-8.
+    return json.dumps(str(text), ensure_ascii=False)
 

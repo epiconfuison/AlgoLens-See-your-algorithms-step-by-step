@@ -7,13 +7,16 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def tool(name):
-    override = os.environ.get('ALGOVIZ_' + name.upper())
+    variable = 'ALGOVIZ_CXX' if name == 'g++' else 'ALGOVIZ_' + name.upper()
+    override = os.environ.get(variable)
+    if override and not Path(override).is_file():
+        raise RuntimeError(f'{variable} 指向的可执行文件不存在：{override}')
     candidate = Path(override or ('C:/mingw64/bin/' + name + '.exe'))
     if candidate.is_file():
         return str(candidate)
     found = shutil.which(name)
     if not found:
-        raise RuntimeError(f'找不到 {name}，请设置 ALGOVIZ_{name.upper()} 为可执行文件路径')
+        raise RuntimeError(f'找不到 {name}，请设置 {variable} 为可执行文件路径')
     return found
 
 

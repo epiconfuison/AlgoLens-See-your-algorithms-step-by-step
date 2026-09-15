@@ -14,6 +14,7 @@ from algoviz.environment import ROOT
 from algoviz.models.state import History, Snapshot
 from algoviz.visualization.renderer import Binding, render
 from .editor import CodeEditor
+from .fonts import ensure_fonts
 from .worker import SessionWorker
 
 STYLE = '''
@@ -23,6 +24,7 @@ QPushButton { background: #27394a; border: 1px solid #3a5267; padding: 7px 11px;
 QPushButton:hover { background: #36536c; }
 QPushButton:disabled { color: #687b8e; background: #1a2632; border-color: #263441; }
 QPushButton#primary { background: #247e74; color: white; border-color: #359d90; }
+QPushButton#primary:disabled { background: #1a2632; color: #687b8e; border-color: #263441; }
 QPlainTextEdit, QLineEdit, QTableWidget, QListWidget { background: #18232e; border: 1px solid #304456; selection-background-color: #36566e; }
 QComboBox, QSpinBox { padding: 4px; background: #243544; border: 1px solid #3a5267; }
 QTabBar::tab { background: #1e2d3b; padding: 8px 14px; }
@@ -39,6 +41,7 @@ QScrollBar::handle:vertical { background: #476077; min-height: 24px; }
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
+        ensure_fonts()
         self.setWindowTitle('算法可视化调试器 · C++ / OpenCV')
         self.resize(1500, 980)
         self.setMinimumSize(1080, 720)
@@ -117,6 +120,9 @@ class MainWindow(QMainWindow):
         self.status.setWordWrap(True)
         self.status.setStyleSheet('color: #9bb7cb; padding: 3px')
         layout.addWidget(self.status)
+        tip = QLabel('请先初始化变量。调试器可能显示尚未初始化的内存值，不能将这些值作为算法结果。')
+        tip.setStyleSheet('color: #b6a384; font-size: 11px')
+        layout.addWidget(tip)
         vertical = QSplitter(Qt.Orientation.Vertical)
         main = QSplitter(Qt.Orientation.Horizontal)
         left = QWidget()
@@ -132,6 +138,7 @@ class MainWindow(QMainWindow):
         left_layout.addLayout(mode_row)
         self.code_tabs = QTabWidget()
         self.editor = CodeEditor()
+        self.editor.textChanged.connect(self.source_changed)
         self.compiled = CodeEditor()
         self.compiled.setReadOnly(True)
         self.compiled.breakpointsChanged.connect(self.refresh_debugger)
@@ -305,6 +312,11 @@ class MainWindow(QMainWindow):
         self.set_state('compiling')
         self.worker.start()
 
+    def source_changed(self):
+        # A raw line number must not silently drift to a different statement.
+        self.editor.breakpoints.clear()
+        self.editor.gutter.update()
+
     def on_event(self, event):
         if self.state == 'stopping':
             return
@@ -335,7 +347,9 @@ class MainWindow(QMainWindow):
                     self.history.append(result)
                 if result.reason in ('breakpoint-hit', 'signal-received'):
                     self.pause_play()
-                self.set_state('paused', result.reason)
+                reasons = {'breakpoint-hit': '命中断点', 'end-stepping-range': '单步完成',
+                           'function-finished': '函数已返回', 'signal-received': '异常信号'}
+                self.set_state('paused', result.detail or reasons.get(result.reason, result.reason))
                 self.timeline.blockSignals(True)
                 self.timeline.setRange(0, len(self.history.items) - 1)
                 self.timeline.setValue(len(self.history.items) - 1)
@@ -346,7 +360,12 @@ class MainWindow(QMainWindow):
             else:
                 self.pause_play()
                 self.compiled.highlight_line(0)
-                self.set_state('exited', result.get('reason', '') + ' ' + result.get('exit-code', ''))
+                reason, code = result.get('reason', ''), result.get('exit-code', '0')
+                abnormal = reason == 'exited-signalled' or code not in ('0', '00')
+                detail = ('异常退出' if abnormal else '正常退出') + ' · 退出码 ' + code
+                if result.get('signal-name'):
+                    detail += ' · ' + result['signal-name']
+                self.set_state('error' if abnormal else 'exited', detail)
 
     def on_finished(self):
         self.update_output()
@@ -433,7 +452,7 @@ class MainWindow(QMainWindow):
         self.index_variable.clear()
         for row, var in enumerate(snap.variables):
             value = str(var.shape) if var.kind in ('array', 'matrix') else str(var.value)
-            for col, text in enumerate((var.name, var.type, value, var.status)):
+            for col, text in enumerate((var.name, var.type, value, '可读' if var.status == 'ok' else var.status)):
                 item = QTableWidgetItem(text)
                 item.setToolTip(text + ('\n' + var.identity if col == 0 else ''))
                 self.variables.setItem(row, col, item)
@@ -500,6 +519,10 @@ class MainWindow(QMainWindow):
 
     def refresh_debugger(self):
         if self.state == 'paused' and self.worker and self.is_latest():
+            shift = 4 if self.mode.currentIndex() == 1 else 0
+            self.editor.breakpoints = {n - shift for n in self.compiled.breakpoints
+                                       if 1 <= n - shift <= self.editor.blockCount()}
+            self.editor.gutter.update()
             self.set_state('running', '更新观察项 / 分页 / 断点')
             self.worker.submit('refresh', {'watches': self.watches, 'pages': self.pages,
                                            'breakpoints': set(self.compiled.breakpoints)})
@@ -627,4 +650,3 @@ class MainWindow(QMainWindow):
             event.ignore()
         else:
             event.accept()
-

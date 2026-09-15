@@ -6,6 +6,7 @@ import numpy as np
 from PySide6.QtCore import QRect, Qt
 from PySide6.QtGui import QColor, QFont, QImage, QPainter
 from algoviz.models.state import changes
+from algoviz.ui.fonts import ensure_fonts
 
 
 @dataclass(frozen=True)
@@ -20,6 +21,7 @@ def number(value):
 
 
 def render(snapshot, selected=None, previous=None, bindings=(), mode='grid'):
+    ensure_fonts()
     variables = snapshot.variables
     var = next((v for v in variables if v.identity == selected), None)
     if var is None or var.kind not in ('array', 'matrix'):
@@ -64,7 +66,7 @@ def render(snapshot, selected=None, previous=None, bindings=(), mode='grid'):
     if not var:
         text(28, y_start + 15, '当前没有数组或矩阵。单步执行初始化语句后查看变量。', 13)
     else:
-        title = var.name + '   ' + ' × '.join(map(str, var.shape))
+        title = var.name + '   [' + ' × '.join(map(str, var.shape)) + ']'
         text(28, y_start, title, 18, '#f3f7fc')
         note = f'元素 {var.offset}–{var.offset + len(var.cells) - 1} / 共 {var.total}' if var.total else '空容器'
         text(28, y_start + 36, note + '    ' + (var.status if var.status != 'ok' else ''), 10, '#93a6bb')
@@ -84,7 +86,8 @@ def render(snapshot, selected=None, previous=None, bindings=(), mode='grid'):
                 notices.append(f'{b.index}={value} 越界 [0, {size})')
             else:
                 bound.append((b, value))
-                notices.append(f'{b.index}={value} ({b.axis})')
+                axis_label = {'index': '下标', 'row': '行', 'col': '列'}.get(b.axis, b.axis)
+                notices.append(f'{b.index}={value} ({axis_label})')
         text(28, y_start + 64, '   |   '.join(notices), 10, '#8ee4ce')
         top = y_start + 106
         numeric = [float(c.value) for c in var.cells if number(c.value)]
