@@ -37,7 +37,8 @@ def render(snapshot, selected=None, previous=None, bindings=(), mode='grid'):
     is_bar = mode == 'bar' and var and var.kind == 'array'
     if is_bar:
         row_count = (len(var.cells) + 9) // 10
-    height = max(540, y_start + 130 + row_count * (210 if is_bar else 94))
+    cell_pitch = 232 if is_bar else 112
+    height = max(540, y_start + 130 + row_count * cell_pitch)
     canvas = np.full((height, width, 3), (29, 24, 20), np.uint8)
     labels = []
 
@@ -98,7 +99,7 @@ def render(snapshot, selected=None, previous=None, bindings=(), mode='grid'):
                 row, col = matrix_rows.index(cell.index[0]), matrix_cols.index(cell.index[1])
             else:
                 row, col = divmod(n, 10)
-            x, y = 64 + col * 88, top + row * (210 if is_bar else 94)
+            x, y = 64 + col * 88, top + row * cell_pitch
             markers = []
             for b, value in bound:
                 axis = 1 if b.axis == 'col' else 0

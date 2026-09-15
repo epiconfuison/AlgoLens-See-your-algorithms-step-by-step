@@ -37,6 +37,7 @@ int main() {
     vector<int> large(450, -2);
     large[205] = 777;
     int matrix[2][3] = {{1,2,3}, {4,5,6}};
+    int (*pointer)[3] = matrix;
     vector<int> empty;
     array<int, 0> zero{};
     string text = "hello";
@@ -55,6 +56,8 @@ int main() {
         assert len(v['large'].cells) == 200
         assert v['matrix'].shape == (2, 3)
         assert [c.value for c in v['matrix'].cells] == [1, 2, 3, 4, 5, 6]
+        assert v['pointer'].kind == 'summary'
+        assert not v['pointer'].cells
         assert v['empty'].total == v['zero'].total == 0
         assert 'hello' in v['text'].value
         assert 'A' in v['letter'].value

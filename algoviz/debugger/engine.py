@@ -104,6 +104,9 @@ class Engine:
         return number
 
     def _length(self, expression, type_name):
+        if (re.search(r'\(\s*\*[^)]*\)\s*\[', type_name)
+                or re.search(r'\*(?:\s+(?:const|volatile))*\s*$', type_name)):
+            return None
         if re.search(r'\[\d+\]', type_name):
             return self._integer('sizeof(' + expression + ')/sizeof((' + expression + ')[0])')
         if re.search(r'(?:std::)?vector\s*<', type_name):
@@ -253,9 +256,10 @@ class Engine:
             raise DebugError('程序尚未暂停')
         stack = [item['frame'] for item in self.mi.command('-stack-list-frames 0 30').get('stack', [])]
         frame = self.mi.command('-stack-info-frame').get('frame', {})
+        depth = self.mi.command('-stack-info-depth').get('depth', str(len(stack)))
         symbols = self._symbols()
         # Frame base uses stack depth / function; block address distinguishes shadowed locals.
-        base = frame.get('func', '?') + ':' + str(len(stack))
+        base = frame.get('func', '?') + ':' + depth
         variables = []
         names = set()
         for item in symbols:
