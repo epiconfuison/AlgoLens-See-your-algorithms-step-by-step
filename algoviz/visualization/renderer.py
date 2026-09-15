@@ -22,10 +22,10 @@ def number(value):
 def render(snapshot, selected=None, previous=None, bindings=(), mode='grid'):
     variables = snapshot.variables
     var = next((v for v in variables if v.identity == selected), None)
-    if var is None:
+    if var is None or var.kind not in ('array', 'matrix'):
         var = next((v for v in variables if v.kind in ('array', 'matrix')), None)
     scalars = [v for v in variables if v.kind not in ('array', 'matrix')]
-    scalar_rows = (len(scalars) + 3) // 4
+    scalar_rows = (len(scalars) + 2) // 3
     y_start = 120 + scalar_rows * 82
     matrix_rows = sorted({c.index[0] for c in var.cells}) if var and var.kind == 'matrix' else []
     matrix_cols = sorted({c.index[1] for c in var.cells}) if var and var.kind == 'matrix' else []

@@ -194,7 +194,7 @@ class Engine:
                 seen.add(name)
         return result
 
-    def snapshot(self):
+    def snapshot(self, advance=True):
         if not self.last_stop:
             raise DebugError('程序尚未暂停')
         stack = [item['frame'] for item in self.mi.command('-stack-list-frames 0 30').get('stack', [])]
@@ -218,7 +218,8 @@ class Engine:
             except DebugError:
                 pass
         self.objects.clear()
-        self.sequence += 1
+        if advance:
+            self.sequence += 1
         return Snapshot(self.sequence, int(frame.get('line', 0)), frame.get('fullname', ''),
                         frame.get('func', ''), stack, variables,
                         self.last_stop.get('reason', 'paused'))
