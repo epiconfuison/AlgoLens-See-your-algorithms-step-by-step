@@ -1,7 +1,73 @@
+# Project-generated debug sessions, screenshots, and the default PNG export
+/.runs/
+/artifacts/
+/snapshot.png
+
+# Python virtual environments and bytecode
 .venv/
-.runs/
+venv/
+env/
 __pycache__/
-*.pyc
+*.py[cod]
+
+# Test, lint, type-checking, and coverage caches
 .pytest_cache/
-artifacts/
+.mypy_cache/
+.ruff_cache/
+.hypothesis/
+.tox/
+.nox/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+pytestdebug.log
+
+# Python packaging and build output
+/build/
+/dist/
 *.egg-info/
+*.egg
+.eggs/
+pip-wheel-metadata/
+
+# C++ / OpenCV build products (keep source files and CMake configuration)
+cmake-build-*/
+CMakeFiles/
+CMakeCache.txt
+*.exe
+*.dll
+*.so
+*.so.*
+*.dylib
+*.o
+*.obj
+*.a
+*.lib
+*.pdb
+*.ilk
+*.exp
+*.pch
+
+# Local environment values; keep shareable, placeholder-only templates
+.env
+.env.*
+!.env.example
+!.env.sample
+!.env.template
+
+# Local editor configuration and temporary files
+/.idea/
+/.vscode/
+/.vs/
+*.user
+*.suo
+*.swp
+*.swo
+*~
+*.log
+
+# Operating-system metadata
+.DS_Store
+Thumbs.db
+Desktop.ini
